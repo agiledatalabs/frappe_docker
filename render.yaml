@@ -2,6 +2,7 @@ services:
   - type: web
     name: backend
     runtime: image
+    plan: free
     image:
       url: frappe/erpnext:v15.34.2
     envVars:
