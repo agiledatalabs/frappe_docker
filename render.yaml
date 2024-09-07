@@ -1,0 +1,185 @@
+services:
+  - type: web
+    name: backend
+    env: docker
+    docker:
+      image: frappe/erpnext:v15.34.2
+      env:
+        - key: DB_HOST
+          value: db
+        - key: DB_PORT
+          value: "3306"
+        - key: REDIS_CACHE
+          value: redis-cache:6379
+        - key: REDIS_QUEUE
+          value: redis-queue:6379
+        - key: SOCKETIO_PORT
+          value: "9000"
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: web
+    name: configurator
+    env: docker
+    docker:
+      image: frappe/erpnext:v15.34.2
+      env:
+        - key: DB_HOST
+          value: db
+        - key: DB_PORT
+          value: "3306"
+        - key: REDIS_CACHE
+          value: redis-cache:6379
+        - key: REDIS_QUEUE
+          value: redis-queue:6379
+        - key: SOCKETIO_PORT
+          value: "9000"
+      command: >
+        bash -c "ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache 'redis://$$REDIS_CACHE';
+        bench set-config -g redis_queue 'redis://$$REDIS_QUEUE';
+        bench set-config -g redis_socketio 'redis://$$REDIS_QUEUE';
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;"
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: web
+    name: create-site
+    env: docker
+    docker:
+      image: frappe/erpnext:v15.34.2
+      command: >
+        bash -c "wait-for-it -t 120 db:3306;
+        wait-for-it -t 120 redis-cache:6379;
+        wait-for-it -t 120 redis-queue:6379;
+        export start=`date +%s`;
+        until [[ -n `grep -hs ^ sites/common_site_config.json | jq -r '.db_host // empty' ]] &&
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r '.redis_cache // empty' ]] &&
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r '.redis_queue // empty' ]]];
+        do
+          echo 'Waiting for sites/common_site_config.json to be created';
+          sleep 5;
+          if (( `date +%s`-start > 120 )); then
+            echo 'could not find sites/common_site_config.json with required keys';
+            exit 1;
+          fi;
+        done;
+        echo 'sites/common_site_config.json found';
+        bench new-site --no-mariadb-socket --admin-password=admin --db-root-password=admin --install-app erpnext --set-default frontend;"
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: web
+    name: frontend
+    env: docker
+    docker:
+      image: frappe/erpnext:v15.34.2
+      env:
+        - key: BACKEND
+          value: backend:8000
+        - key: FRAPPE_SITE_NAME_HEADER
+          value: frontend
+        - key: SOCKETIO
+          value: websocket:9000
+        - key: UPSTREAM_REAL_IP_ADDRESS
+          value: 127.0.0.1
+        - key: UPSTREAM_REAL_IP_HEADER
+          value: X-Forwarded-For
+        - key: UPSTREAM_REAL_IP_RECURSIVE
+          value: "off"
+        - key: PROXY_READ_TIMEOUT
+          value: "120"
+        - key: CLIENT_MAX_BODY_SIZE
+          value: 50m
+      command: nginx-entrypoint.sh
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+    ports:
+      - port: 8080
+
+  - type: background
+    name: queue-long
+    env: docker
+    docker:
+      image: frappe/erpnext:v15.34.2
+      command: >
+        bench worker --queue long,default,short
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: background
+    name: queue-short
+    env: docker
+    docker:
+      image: frappe/erpnext:v15.34.2
+      command: >
+        bench worker --queue short,default
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: background
+    name: redis-queue
+    env: docker
+    docker:
+      image: redis:6.2-alpine
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: background
+    name: redis-cache
+    env: docker
+    docker:
+      image: redis:6.2-alpine
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: background
+    name: scheduler
+    env: docker
+    docker:
+      image: frappe/erpnext:v15.34.2
+      command: bench schedule
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: background
+    name: websocket
+    env: docker
+    docker:
+      image: frappe/erpnext:v15.34.2
+      command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
+
+  - type: background
+    name: db
+    env: docker
+    docker:
+      image: mariadb:10.6
+      env:
+        - key: MYSQL_ROOT_PASSWORD
+          value: admin
+      command:
+        - --character-set-server=utf8mb4
+        - --collation-server=utf8mb4_unicode_ci
+        - --skip-character-set-client-handshake
+        - --skip-innodb-read-only-compressed
+      healthcheck:
+        test: mysqladmin ping -h localhost --password=admin
+        interval: 1s
+        retries: 15
+    build:
+      type: dockerfile
+      dockerfile_path: ./Dockerfile
