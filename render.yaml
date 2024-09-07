@@ -103,7 +103,7 @@ services:
     ports:
       - port: 8080
 
-  - type: background
+  - type: worker
     name: queue-long
     env: docker
     docker:
@@ -114,7 +114,7 @@ services:
       type: dockerfile
       dockerfile_path: ./Dockerfile
 
-  - type: background
+  - type: worker
     name: queue-short
     env: docker
     docker:
@@ -125,7 +125,7 @@ services:
       type: dockerfile
       dockerfile_path: ./Dockerfile
 
-  - type: background
+  - type: worker
     name: redis-queue
     env: docker
     docker:
@@ -134,7 +134,7 @@ services:
       type: dockerfile
       dockerfile_path: ./Dockerfile
 
-  - type: background
+  - type: worker
     name: redis-cache
     env: docker
     docker:
@@ -143,7 +143,7 @@ services:
       type: dockerfile
       dockerfile_path: ./Dockerfile
 
-  - type: background
+  - type: worker
     name: scheduler
     env: docker
     docker:
@@ -153,7 +153,7 @@ services:
       type: dockerfile
       dockerfile_path: ./Dockerfile
 
-  - type: background
+  - type: worker
     name: websocket
     env: docker
     docker:
@@ -163,7 +163,7 @@ services:
       type: dockerfile
       dockerfile_path: ./Dockerfile
 
-  - type: background
+  - type: worker
     name: db
     env: docker
     docker:
